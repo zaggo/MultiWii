@@ -1,7 +1,7 @@
 /*
 MultiWiiCopter by Alexandre Dubus
 www.multiwii.com
-November  2011     V1.9
+November  2011     V1.dev
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
@@ -70,7 +70,7 @@ static uint16_t cycleTimeMax = 0;       // highest ever cycle timen
 static uint16_t cycleTimeMin = 65535;   // lowest ever cycle timen
 static uint16_t powerMax = 0;           // highest ever current
 static uint16_t powerAvg = 0;           // last known current
-static uint8_t i2c_errors_count = 0;    // count of wmp/nk resets
+static int16_t  i2c_errors_count = 0;
 
 // **********************
 // power meter
@@ -110,7 +110,7 @@ static int16_t gyroZero[3] = {0,0,0};
 static int16_t accZero[3]  = {0,0,0};
 static int16_t magZero[3]  = {0,0,0};
 static int16_t angle[2]    = {0,0};  // absolute angle inclination in multiple of 0.1 degree    180 deg = 1800
-static int8_t  smallAngle25;
+static int8_t  smallAngle25 = 1;
 
 // *************************
 // motor and servo functions
@@ -154,11 +154,10 @@ static int16_t  GPS_directionToHome = 0;
 static uint8_t  GPS_update = 0;
 
 void annexCode() { //this code is excetuted at each loop and won't interfere with control loop if it lasts less than 650 microseconds
-  static uint32_t serialTime;
   static uint32_t buzzerTime,calibratedAccTime,telemetryTime,telemetryAutoTime,psensorTime;
   static uint8_t  buzzerFreq;         //delay between buzzer ring
   uint8_t axis,prop1,prop2;
-  uint16_t pMeterRaw, powerValue;                //used for current reading
+  uint16_t pMeterRaw, powerValue;     //used for current reading
 
   //PITCH & ROLL only dynamic PID adjustemnt,  depending on throttle value
   if      (rcData[THROTTLE]<1500) prop2 = 100;
@@ -243,6 +242,13 @@ void annexCode() { //this code is excetuted at each loop and won't interfere wit
     if (armed) {LEDPIN_ON;}
   }
 
+  #if defined(LED_RING)
+    static uint32_t LEDTime;
+    if ( currentTime > LEDTime ) {
+      LEDTime = currentTime + 50000;
+      i2CLedRingState();
+    }
+  #endif
 
   if ( currentTime > calibratedAccTime ) {
     if (smallAngle25 == 0) {
@@ -252,10 +258,9 @@ void annexCode() { //this code is excetuted at each loop and won't interfere wit
     } else
       calibratedACC = 1;
   }
-  if (currentTime > serialTime) { // 50Hz
-    serialCom();
-    serialTime = currentTime + 20000;
-  }
+
+  serialCom();
+
   #ifdef LCD_TELEMETRY_AUTO
     if ( (telemetry_auto) && (micros() > telemetryAutoTime + LCD_TELEMETRY_AUTO) ) { // every 2 seconds
       telemetry++;
@@ -387,12 +392,24 @@ void loop () {
         rcDelayCommand++;
       } else if (rcData[PITCH] > MAXCHECK) {
          accTrim[PITCH]+=2;writeParams();
+         #if defined(LED_RING)
+           blinkLedRing();
+         #endif
       } else if (rcData[PITCH] < MINCHECK) {
          accTrim[PITCH]-=2;writeParams();
+         #if defined(LED_RING)
+           blinkLedRing();
+         #endif
       } else if (rcData[ROLL] > MAXCHECK) {
          accTrim[ROLL]+=2;writeParams();
+         #if defined(LED_RING)
+           blinkLedRing();
+         #endif
       } else if (rcData[ROLL] < MINCHECK) {
          accTrim[ROLL]-=2;writeParams();
+         #if defined(LED_RING)
+           blinkLedRing();
+         #endif
       } else {
         rcDelayCommand = 0;
       }

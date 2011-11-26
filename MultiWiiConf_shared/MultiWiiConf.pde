@@ -14,7 +14,8 @@ ControlP5 controlP5;
 Textlabel txtlblWhichcom,version; 
 ListBox commListbox;
 
-int frame_size = 124;
+int CHECKBOXITEMS=10;
+int frame_size = 116+CHECKBOXITEMS;
 
 cGraph g_graph;
 int windowsX    = 800;        int windowsY    = 540;
@@ -82,8 +83,8 @@ int nunchukPresent,i2cAccPresent,i2cBaroPresent,i2cMagnetoPresent,GPSPresent,lev
 float time1,time2;
 int cycleTime;
 
-CheckBox checkbox[] = new CheckBox[8];
-int activation[] = new int[8];
+CheckBox checkbox[] = new CheckBox[CHECKBOXITEMS];
+int activation[] = new int[CHECKBOXITEMS];
 
 PFont font8,font12,font15;
 
@@ -198,10 +199,10 @@ void setup() {
   magxSlider  =      controlP5.addSlider("magxSlider",-5000,+5000,0,x+20,y5+10,50,10);magxSlider.setDecimalPrecision(0);magxSlider.setLabel("");
   magySlider  =      controlP5.addSlider("magySlider",-5000,+5000,0,x+20,y5+20,50,10);magySlider.setDecimalPrecision(0);magySlider.setLabel("");
   magzSlider  =      controlP5.addSlider("magzSlider",-5000,+5000,0,x+20,y5+30,50,10);magzSlider.setDecimalPrecision(0);magzSlider.setLabel("");
-  debug1Slider  =  controlP5.addSlider("debug1Slider",-30000,+30000,0,x+130,y6,50,10);debug1Slider.setDecimalPrecision(1);debug1Slider.setLabel("");
-  debug2Slider  =    controlP5.addSlider("debug2Slider",-5000,+5000,0,x+250,y6,50,10);debug2Slider.setDecimalPrecision(0);debug2Slider.setLabel("");
-  debug3Slider  =    controlP5.addSlider("debug3Slider",-5000,+5000,0,x+370,y6,50,10);debug3Slider.setDecimalPrecision(0);debug3Slider.setLabel("");
-  debug4Slider  =    controlP5.addSlider("debug4Slider",-5000,+5000,0,x+490,y6,50,10);debug4Slider.setDecimalPrecision(0);debug4Slider.setLabel("");
+  debug1Slider  =    controlP5.addSlider("debug1Slider",-32000,+32000,0,x+130,y6,50,10);debug1Slider.setDecimalPrecision(1);debug1Slider.setLabel("");
+  debug2Slider  =    controlP5.addSlider("debug2Slider",-32000,+32000,0,x+250,y6,50,10);debug2Slider.setDecimalPrecision(0);debug2Slider.setLabel("");
+  debug3Slider  =    controlP5.addSlider("debug3Slider",-32000,+32000,0,x+370,y6,50,10);debug3Slider.setDecimalPrecision(0);debug3Slider.setLabel("");
+  debug4Slider  =    controlP5.addSlider("debug4Slider",-32000,+32000,0,x+490,y6,50,10);debug4Slider.setDecimalPrecision(0);debug4Slider.setLabel("");
 
   for(int i=0;i<7;i++) {
     confP[i] = (controlP5.Numberbox) hideLabel(controlP5.addNumberbox("confP"+i,0,xParam+40,yParam+20+i*20,30,14));
@@ -225,7 +226,7 @@ void setup() {
   confRC_EXPO = controlP5.addNumberbox("RC EXPO",0,xParam+40,yParam+240,30,14);confRC_EXPO.setDecimalPrecision(2);confRC_EXPO.setMultiplier(0.01);confRC_EXPO.setLabel("");
   confRC_EXPO.setDirection(Controller.HORIZONTAL);confRC_EXPO.setMin(0);confRC_EXPO.setMax(1);confRC_EXPO.setColorBackground(red_);
 
-  for(int i=0;i<8;i++) {
+  for(int i=0;i<CHECKBOXITEMS;i++) {
     checkbox[i] =  controlP5.addCheckBox("cb"+i,xBox+40,yBox+20+13*i);
     checkbox[i].setColorActive(color(255));checkbox[i].setColorBackground(color(120));
     checkbox[i].setItemsPerRow(6);checkbox[i].setSpacingColumn(10);
@@ -404,9 +405,9 @@ void draw() {
     line(0,0, -1.8*size,+size);line(-1.8*size,size,-1.8*size,+size-30);    line(-1.8*size,size-30,0,-1.5*size);
     noLights();text("FLYING WING", -40,-50);camera();popMatrix();
 
-    servoSliderV1.setPosition(xMot+10,yMot+10);servoSliderV1.setCaptionLabel("LEFT");servoSliderV1.show(); 
-    servoSliderV2.setPosition(xMot+90,yMot+10);servoSliderV2.setCaptionLabel("RIGHT");servoSliderV2.show(); 
-    motSliderV0.setPosition(xMot+50,yMot+30);motSliderV0.setHeight(90);motSliderV0.setCaptionLabel("M-d9");motSliderV0.show();
+    servoSliderV1.setPosition(xMot+5,yMot+10);servoSliderV1.setCaptionLabel("LEFT");servoSliderV1.show(); 
+    servoSliderV2.setPosition(xMot+100,yMot+10);servoSliderV2.setCaptionLabel("RIGHT");servoSliderV2.show();
+    motSliderV0.setPosition(xMot+50,yMot+30);motSliderV0.setHeight(90);motSliderV0.setCaptionLabel("Mot");motSliderV0.show();
   } else if (multiType == 9) { //Y4
     ellipse(-size,  -size, size, size);ellipse(+size,  -size, size, size);ellipse(0,  +size, size+2, size+2);
     line(-size,-size, 0,0);line(+size,-size, 0,0);line(0,+size, 0,0);
@@ -558,6 +559,8 @@ void draw() {
   text("CAMTRIG",xBox-5,yBox+82);
   text("GPS HOME",xBox-5,yBox+108);
   text("GPS HOLD",xBox-5,yBox+121);
+  text("PassThru",xBox-5,yBox+134);
+  text("Alarm ON",xBox-5,yBox+147);
   text("LOW",xBox+37,yBox+15);text("MID",xBox+57,yBox+15);text("HIGH",xBox+74,yBox+15);
   text("LOW",xBox+100,yBox+15);text("MID",xBox+123,yBox+15);text("HIGH",xBox+140,yBox+15);
 }
@@ -614,7 +617,7 @@ public void READ() {
   
   confRC_RATE.setColorBackground(green_);confRC_EXPO.setColorBackground(green_);rollPitchRate.setColorBackground(green_);yawRate.setColorBackground(green_);dynamic_THR_PID.setColorBackground(green_);
 
-  for(int i=0;i<8;i++) for(int a=0;a<6;a++)
+  for(int i=0;i<CHECKBOXITEMS;i++) for(int a=0;a<6;a++)
     if ((byte(activation[i])&(1<<a))>0) checkbox[i].activate(a); else checkbox[i].deactivate(a);
 
   confPowerTrigger.setValue(intPowerTrigger);
@@ -634,14 +637,14 @@ public void WRITE() {
   byteYawRate = (round(yawRate.value()*100));
   byteDynThrPID = (round(dynamic_THR_PID.value()*100));
 
-  for(int i=0;i<8;i++) {
+  for(int i=0;i<CHECKBOXITEMS;i++) {
     activation[i] = 0;
     for(int a=0;a<6;a++) activation[i] += (int)(checkbox[i].arrayValue()[a]*(1<<a));
   }
   
   intPowerTrigger = (round(confPowerTrigger.value()));
 
-  int[] s = new int[34];
+  int[] s = new int[26+CHECKBOXITEMS];
   int p = 0;
    s[p++] = 'W'; //0 write to Eeprom @ arduino //1
    for(int i=0;i<5;i++) {s[p++] = byteP[i];  s[p++] = byteI[i];  s[p++] =  byteD[i];} //16
@@ -651,10 +654,10 @@ public void WRITE() {
    s[p++] = byteRollPitchRate; 
    s[p++] = byteYawRate;
    s[p++] = byteDynThrPID; //24
-   for(int i=0;i<8;i++) s[p++] = activation[i]; //32
+   for(int i=0;i<CHECKBOXITEMS;i++) s[p++] = activation[i]; //34
    s[p++] = intPowerTrigger;
-   s[p++] = intPowerTrigger >>8 &0xff; //34
-   for(int i =0;i<34;i++)    g_serial.write(char(s[i]));
+   s[p++] = intPowerTrigger >>8 &0xff; //36
+   for(int i =0;i<(26+CHECKBOXITEMS);i++)    g_serial.write(char(s[i]));
 }
 
 public void CALIB_ACC() {
@@ -717,7 +720,7 @@ void processSerialData() {
       byteRollPitchRate = read8();
       byteYawRate = read8();
       byteDynThrPID = read8();                                                        //95
-      for(int i=0;i<8;i++) activation[i] = read8();                                   //102
+      for(int i=0;i<CHECKBOXITEMS;i++) activation[i] = read8();                       //102
       GPS_distanceToHome = read16();
       GPS_directionToHome = read16();
       GPS_numSat = read8();

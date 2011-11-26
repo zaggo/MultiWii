@@ -24,7 +24,7 @@ typedef struct lcd_param_def_t{
 };
 
 typedef struct lcd_param_t{
-  char*  paramText;
+  char * paramText;
   void * var; 
   lcd_param_def_t * def;
 };
@@ -44,6 +44,7 @@ static lcd_param_def_t __PT  = {&LTU8,  0, 1, 1};
 static lcd_param_def_t __VB  = {&LTU8,  1, 1, 0};
 static lcd_param_def_t __L   = {&LTU8,  0, 1, 0};
 static lcd_param_def_t __FS  = {&LTU8,  1, 1, 0};
+static lcd_param_def_t __SE  = {&LTU16,  0, 1, 10};
 // Parameters
 static lcd_param_t lcd_param[] = {
   {"PITCH&ROLL P",    &P8[ROLL],      &__P}
@@ -80,6 +81,10 @@ static lcd_param_t lcd_param[] = {
 #ifdef VBAT
 , {"Battery Volt",    &vbat,          &__VB} 
 #endif
+#ifdef FLYING_WING
+, {"Trim Servo1 Mid",    &wing_left_mid, &__SE} 
+, {"Trim Servo2 Mid",    &wing_right_mid,&__SE} 
+#endif
 #ifdef LOG_VALUES
 , {"Failsafe    ",    &failsafeEvents,&__FS} 
 , {"i2c errors",       &i2c_errors_count,          &__L} 
@@ -98,10 +103,10 @@ void LCDprint(uint8_t i) {
   #if defined(LCD_ETPP) 
    i2c_ETPP_send_char(i);
   #else
-    LCDPIN_OFF
+    LCDPIN_OFF;
     delayMicroseconds(BITDELAY);
     for (uint8_t mask = 0x01; mask; mask <<= 1) {
-      if (i & mask) LCDPIN_ON else LCDPIN_OFF // choose bit
+      if (i & mask) {LCDPIN_ON;} else {LCDPIN_OFF;} // choose bit
       delayMicroseconds(BITDELAY);
     }
     LCDPIN_ON //switch ON digital PIN 0
@@ -127,20 +132,20 @@ void initLCD() {
   #else
     Serial.end();
     //init LCD
-    PINMODE_LCD //TX PIN for LCD = Arduino RX PIN (more convenient to connect a servo plug on arduino pro mini)
+    PINMODE_LCD; //TX PIN for LCD = Arduino RX PIN (more convenient to connect a servo plug on arduino pro mini)
   #endif
   LCDclear();
+  LCDsetLine(1);
   LCDprintChar("MultiWii Config");
-  LCDsetLine(2);LCDprintChar("for all params");
   delay(2500);
   LCDclear();
 }
 
 static char line1[17],line2[17];
 
-void __u8Inc(void * var, int8_t inc) {*(uint8_t*)var += inc;};
-void __u16Inc(void * var, int8_t inc) {*(uint16_t*)var += inc;};
-void __nullInc(void * var, int8_t inc) {};
+void __u8Inc(void * var, int8_t inc) {*(uint8_t*)var += inc;}
+void __u16Inc(void * var, int8_t inc) {*(uint16_t*)var += inc;}
+void __nullInc(void * var, int8_t inc) {}
 
 void __u8Fmt(void * var, uint8_t mul, uint8_t dec) {
   uint16_t unit = *(uint8_t*)var;
@@ -205,8 +210,8 @@ void configurationLoop() {
   while (LCD == 1) {
     if (refreshLCD) {
       blinkLED(10,20,1);
-      strcpy(line2,"                ");
       strcpy(line1,"                ");
+      strcpy(line2,"                ");
       i=0; char* point = lcd_param[p].paramText; while (*point) line1[i++] = *point++;
       lcd_param[p].def->type->fmt(lcd_param[p].var, lcd_param[p].def->multiplier, lcd_param[p].def->decimal);
       LCDsetLine(1);LCDprintChar(line1); //refresh line 1 of LCD
@@ -237,9 +242,9 @@ void configurationLoop() {
   blinkLED(20,30,1);
   
   LCDclear();
-  if (LCD == 0) LCDprintChar("Saving Settings.."); else LCDprintChar("skipping Save.");
+  if (LCD == 0) LCDprintChar("Saving Settings"); else LCDprintChar("skipping Save");
   if (LCD == 0) writeParams();
-  LCDsetLine(2);LCDprintChar("..done! Exit.");
+  LCDsetLine(2);LCDprintChar("exit config");
   #if !defined(LCD_TEXTSTAR) && !defined(LCD_ETPP)
     Serial.begin(SERIAL_COM_SPEED);
   #endif
@@ -255,18 +260,18 @@ void configurationLoop() {
 #ifdef LCD_TELEMETRY
 void lcd_telemetry() {
   // LCD_BAR(n,v) : draw a bar graph - n number of chars for width, v value in % to display
-  #define LCD_BAR(n,v) {} // add your own implementation here
-  #ifdef LCD_TEXTSTAR
+  #if defined(LCD_TEXTSTAR)
     #define LCD_BAR(n,v) { LCDprint(0xFE);LCDprint('b');LCDprint(n);LCDprint(v); }
-  #endif
-  #ifdef LCD_ETPP
-    #define LCD_BAR(n,v) LCDbarGraph(n,v);
+  #elif defined(LCD_ETPP)
+    #define LCD_BAR(n,v) {LCDbarGraph(n,v); }
+  #else
+    #define LCD_BAR(n,v) {} // add your own implementation here  
   #endif
   
   uint16_t intPowerMeterSum;   
 
   switch (telemetry) { // output telemetry data, if one of four modes is set
-    case 'C': // button C on Textstar LCD -> cycle time
+    case 3: // button C on Textstar LCD -> cycle time
       strcpy(line1,"Cycle    -----us"); //uin16_t cycleTime
       /*            0123456789.12345*/
       strcpy(line2,"(-----, -----)us"); //uin16_t cycleTimeMax
@@ -290,7 +295,7 @@ void lcd_telemetry() {
     #endif
       LCDsetLine(1);LCDprintChar(line1);
       break;
-    case 'B': // button B on Textstar LCD -> Voltage, PowerSum and power alarm trigger value
+    case 2: // button B on Textstar LCD -> Voltage, PowerSum and power alarm trigger value
       strcpy(line1,"--.-V   -----mAh"); //uint8_t vbat, intPowerMeterSum
       /*            0123456789.12345*/
       //    (line2,".......  ......."); // intPowerMeterSum, intPowerTrigger1
@@ -329,11 +334,11 @@ void lcd_telemetry() {
       LCDprintChar("        ");
     #endif
       break;
-    case 'A': // button A on Textstar LCD -> angles 
+    case 1: // button A on Textstar LCD -> angles 
       uint16_t unit;
       strcpy(line1,"Deg ---.-  ---.-");
       /*            0123456789.12345*/
-      strcpy(line2,"---,-A max---,-A"); //uin16_t cycleTimeMax
+      strcpy(line2,"---,-A max---,-A");
       if (angle[0] < 0 ) {
         unit = -angle[0];
         line1[3] = '-';
@@ -367,7 +372,7 @@ void lcd_telemetry() {
       #endif
       LCDsetLine(2);LCDprintChar(line2); //refresh line 2 of LCD
       break;    
-    case 'D': // button D on Textstar LCD -> sensors
+    case 4: // button D on Textstar LCD -> sensors
     #define GYROLIMIT 30 // threshold: for larger values replace bar with dots
     #define ACCLIMIT 30 // threshold: for larger values replace bar with dots     
       LCDsetLine(1);LCDprintChar("G "); //refresh line 1 of LCD
@@ -379,15 +384,22 @@ void lcd_telemetry() {
       if (abs(accSmooth[1]) < ACCLIMIT) { LCD_BAR(4,(ACCLIMIT+accSmooth[1])*50/ACCLIMIT) } else LCDprintChar("...."); LCDprint(' ');
       if (abs(accSmooth[2] - acc_1G) < ACCLIMIT) { LCD_BAR(4,(ACCLIMIT+accSmooth[2]-acc_1G)*50/ACCLIMIT) } else LCDprintChar("....");
       break;
-    case 'Z': // No Z button.  Displays with auto telemetry only
-      strcpy(line1,"Failsafe -----  ");  
+    case 5: // No Z button.  Displays with auto telemetry only
+      strcpy(line1,"Failsafe   -----");  
       /*            0123456789012345   */
-      strcpy(line2,"                ");
-      line1[9] = '0' + failsafeEvents / 10000;
-      line1[10] = '0' + failsafeEvents / 1000 - (failsafeEvents/10000) * 10;
-      line1[11] = '0' + failsafeEvents / 100  - (failsafeEvents/1000)  * 10;
-      line1[12] = '0' + failsafeEvents / 10   - (failsafeEvents/100)   * 10;
-      line1[13] = '0' + failsafeEvents        - (failsafeEvents/10)    * 10;
+      strcpy(line2,"i2c errors _____");
+     #ifdef LOG_VALUES
+      line1[11] = '0' + failsafeEvents / 10000;
+      line1[12] = '0' + failsafeEvents / 1000 - (failsafeEvents/10000) * 10;
+      line1[13] = '0' + failsafeEvents / 100  - (failsafeEvents/1000)  * 10;
+      line1[14] = '0' + failsafeEvents / 10   - (failsafeEvents/100)   * 10;
+      line1[15] = '0' + failsafeEvents        - (failsafeEvents/10)    * 10;
+      line2[11] = '0' + i2c_errors_count / 10000;
+      line2[12] = '0' + i2c_errors_count / 1000 - (i2c_errors_count/10000) * 10;
+      line2[13] = '0' + i2c_errors_count / 100  - (i2c_errors_count/1000)  * 10;
+      line2[14] = '0' + i2c_errors_count / 10   - (i2c_errors_count/100)   * 10;
+      line2[15] = '0' + i2c_errors_count        - (i2c_errors_count/10)    * 10;
+     #endif
       LCDsetLine(1);LCDprintChar(line1);
       LCDsetLine(2);LCDprintChar(line2);
       break;
@@ -442,8 +454,7 @@ void LCDclear() {
   #if defined(LCD_ETPP)
     i2c_ETPP_send_cmd(0x01);                              // Clear display command, which does NOT clear an Eagle Tree because character set "R" has a '>' at 0x20
     for (byte i = 0; i<80; i++) i2c_ETPP_send_char(' ');  // Blanks for all 80 bytes of RAM in the controller, not just the 2x16 display
-  #endif
-  #if defined(LCD_TEXTSTAR)
+  #eliff defined(LCD_TEXTSTAR)
     LCDprint(0x0c); //clear screen
   #endif
 }
@@ -455,7 +466,7 @@ void LCDsetLine(byte line) {  // Line = 1 or 2
   #if defined(LCD_ETPP)
     i2c_ETPP_set_cursor(0,line-1);
   #else
-    if (line=1) {LCDprint(0xFE);LCDprint(128);} else {LCDprint(0xFE);LCDprint(192);}
+    if (line==1) {LCDprint(0xFE);LCDprint(128);} else {LCDprint(0xFE);LCDprint(192);}
   #endif
 }
 

@@ -1,5 +1,5 @@
 static uint8_t point;
-static uint8_t s[128];
+static uint8_t s[130];
 void serialize16(int16_t a) {s[point++]  = a; s[point++]  = a>>8&0xff;}
 void serialize8(uint8_t a)  {s[point++]  = a;}
 
@@ -35,19 +35,35 @@ void serialCom() {
 
   if ((!tx_busy) && Serial.available()) {
     switch (Serial.read()) {
+    #ifdef BTSERIAL
+    case 'K': //receive RC data from Bluetooth Serial adapter as a remote
+      rcData[THROTTLE] = (Serial.read() * 4) + 1000;
+      rcData[ROLL]     = (Serial.read() * 4) + 1000;
+      rcData[PITCH]    = (Serial.read() * 4) + 1000;
+      rcData[YAW]      = (Serial.read() * 4) + 1000;
+      rcData[AUX1]     = (Serial.read() * 4) + 1000;
+      break;
+    #endif
     #ifdef LCD_TELEMETRY
     case 'A': // button A press
-      if (telemetry=='A') telemetry = 0; else { telemetry = 'A'; LCDprint(12); /* clear screen */ }
+    case '1':
+      if (telemetry==1) telemetry = 0; else { telemetry = 1; LCDclear(); }
       break;    
     case 'B': // button B press
-      if (telemetry=='B') telemetry = 0; else { telemetry = 'B'; LCDprint(12); /* clear screen */ }
+    case '2':
+      if (telemetry==2) telemetry = 0; else { telemetry = 2; LCDclear(); }
       break;    
     case 'C': // button C press
-      if (telemetry=='C') telemetry = 0; else { telemetry = 'C'; LCDprint(12); /* clear screen */ }
+    case '3':
+           if (telemetry==3) telemetry = 0; else { telemetry = 3; LCDclear(); }
       break;    
     case 'D': // button D press
-      if (telemetry=='D') telemetry = 0; else { telemetry = 'D'; LCDprint(12); /* clear screen */ }
+    case '4':
+      if (telemetry==4) telemetry = 0; else { telemetry = 4; LCDclear(); }
       break;
+    case '5':
+      if (telemetry==5) telemetry = 0; else { telemetry = 5; LCDclear(); }
+      break;      
     case 'a': // button A release
     case 'b': // button B release
     case 'c': // button C release
@@ -80,7 +96,7 @@ void serialCom() {
       serialize8(rollPitchRate);
       serialize8(yawRate);
       serialize8(dynThrPID);
-      for(i=0;i<8;i++) serialize8(activate[i]);
+      for(i=0;i<CHECKBOXITEMS;i++) serialize8(activate[i]);
       serialize16(GPS_distanceToHome);
       serialize16(GPS_directionToHome);
       serialize8(GPS_numSat);
@@ -95,10 +111,10 @@ void serialCom() {
         serialize16(0);serialize16(0);
       #endif
       serialize8(vbat);
-      serialize16(BaroAlt/10); // 4 variables are here for general monitoring purpose
-      serialize16(0);              // debug2
-      serialize16(0);              // debug3
-      serialize16(0);              // debug4
+      serialize16(BaroAlt/10);        // 4 variables are here for general monitoring purpose
+      serialize16(i2c_errors_count);  // debug2
+      serialize16((rcOptions & activate[BOXALARMON]));      // debug3
+      serialize16(armed);             // debug4
       serialize8('M');
       UartSendData(); // Serial.write(s,point);
       break;
@@ -120,14 +136,14 @@ void serialCom() {
       UartSendData();
       break;
     case 'W': //GUI write params to eeprom @ arduino
-      while (Serial.available()<33) {}
+      while (Serial.available()<(24+CHECKBOXITEMS)) {}
       for(i=0;i<5;i++) {P8[i]= Serial.read(); I8[i]= Serial.read(); D8[i]= Serial.read();} //15
       P8[PIDLEVEL] = Serial.read(); I8[PIDLEVEL] = Serial.read(); //17
       P8[PIDMAG] = Serial.read(); //18
       rcRate8 = Serial.read(); rcExpo8 = Serial.read(); //20
       rollPitchRate = Serial.read(); yawRate = Serial.read(); //22
       dynThrPID = Serial.read(); //23
-      for(i=0;i<8;i++) activate[i] = Serial.read(); //31
+      for(i=0;i<CHECKBOXITEMS;i++) activate[i] = Serial.read(); 
      #if defined(POWERMETER)
       powerTrigger1 = (Serial.read() + 256* Serial.read() ) / PLEVELSCALE; // we rely on writeParams() to compute corresponding pAlarm value
      #else
@@ -141,16 +157,6 @@ void serialCom() {
     case 'E': //GUI to arduino MAG calibration request
       calibratingM=1;
       break;
-	#if defined(BTSERIAL)  
-    case 'Z': //receive stuff from Serial port as a remote
-	      rcData[THROTTLE] = (Serial.read() * 4) + 1000;
-	      rcData[ROLL]     = (Serial.read() * 4) + 1000;
-	      rcData[PITCH]    = (Serial.read() * 4) + 1000;
-	      rcData[YAW]      = (Serial.read() * 4) + 1000;
-	      rcData[AUX1]     = (Serial.read() * 4) + 1000;
-	      Serial.write("Z");
-      break;
-	#endif
     }
   }
 }
