@@ -29,6 +29,30 @@ void GPS_NewData() {
           *varptr++ = i2c_readAck();
           *varptr   = i2c_readNak();
         }
+		uint8_t *varptr;
+		//GPS_ground_speed
+		varptr = (uint8_t *)&GPS_ground_speed;
+		i2c_rep_start(I2C_GPS_ADDRESS);
+		i2c_write(I2C_GPS_GROUND_SPEED );       //0x07
+		i2c_rep_start(I2C_GPS_ADDRESS+1);
+		*varptr++ = i2c_readAck();
+		*varptr   = i2c_readNak();
+
+		//GPS_ground_course
+		varptr = (uint8_t *)&GPS_ground_course;
+		i2c_rep_start(I2C_GPS_ADDRESS);
+		i2c_write(I2C_GPS_COURSE);             //0x9C
+		i2c_rep_start(I2C_GPS_ADDRESS+1);
+		*varptr++ = i2c_readAck();
+		*varptr   = i2c_readNak();
+
+		//GPS_altitude
+		varptr = (uint8_t *)&GPS_altitude;
+		i2c_rep_start(I2C_GPS_ADDRESS);
+		i2c_write(I2C_GPS_ALTITUDE);             //0x09
+		i2c_rep_start(I2C_GPS_ADDRESS+1);
+		*varptr++ = i2c_readAck();
+		*varptr   = i2c_readNak();
   
     } else {                                                                          //We don't have a fix zero out distance and bearing (for safety reasons)
       GPS_distanceToHome = 0;
@@ -69,10 +93,13 @@ void GPS_NewData() {
    output: distance in meters, bearing in degrees
 */
 void GPS_distance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint16_t* dist, int16_t* bearing) {
-  float dLat = (lat2 - lat1);                                    // difference of latitude in 1/100000 degrees
-  float dLon = (lon2 - lon1) * cos(lat1*(PI/180/100000.0));      // difference of longitude in 1/100000 degrees
+  float dLat = ((lat2 - lat1));                                    // difference of latitude in 1/100000 degrees
+  float dLon = ((lon2 - lon1)) * cos(lat1*(PI/180/100000.0));      // difference of longitude in 1/100000 degrees
   *dist = 6372795 / 100000.0 * PI/180*(sqrt(sq(dLat) + sq(dLon)));
-  *bearing = 180/PI*(atan2(dLon,dLat));
+  if (lat1 != lat2)
+    *bearing = 180/PI*(atan2(dLon,dLat));
+  else
+    *bearing = 0;
 }
 
 /* The latitude or longitude is coded this way in NMEA frames

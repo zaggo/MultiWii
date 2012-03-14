@@ -1,3 +1,19 @@
+#define SERIAL_RX_BUFFER_SIZE 64
+
+#if defined(PROMINI) 
+  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][1];
+  volatile uint8_t serialHeadRX[1],serialTailRX[1];
+#endif
+#if defined(PROMICRO)
+  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][2];
+  volatile uint8_t serialHeadRX[2],serialTailRX[2];
+  uint8_t usb_use_buf = 0;
+#endif
+#if defined(MEGA)
+  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][4];
+  volatile uint8_t serialHeadRX[4],serialTailRX[4];
+#endif
+
 void serialCom() {
   uint8_t i, sr;
   
@@ -60,7 +76,7 @@ void serialCom() {
       for(i=0;i<8;i++) serialize16(motor[i]);
       for(i=0;i<8;i++) serialize16(rcData[i]);
       serialize8(nunchuk|ACC<<1|BARO<<2|MAG<<3|GPS<<4);
-      serialize8(accMode|baroMode<<1|magMode<<2|GPSModeHome<<3|GPSModeHold<<4|armed<<5);
+      serialize8(accMode<<BOXACC|baroMode<<BOXBARO|magMode<<BOXMAG|GPSModeHome<<BOXGPSHOME|GPSModeHold<<BOXGPSHOLD|armed<<BOXARM); // if bosxitem >7 then need to send 16 bit and in Processing make mode 16bit
       #if defined(LOG_VALUES)
         serialize16(cycleTimeMax);
         cycleTimeMax = 0;
@@ -81,7 +97,7 @@ void serialCom() {
         serialize8(activate2[i] | (rcOptions[i]<<7) ); // use highest bit to transport state in mwc
       }
       serialize16(GPS_distanceToHome);
-      serialize16(GPS_directionToHome+180);
+      serialize16(GPS_directionToHome);
       serialize8(GPS_numSat);
       serialize8(GPS_fix);
       serialize8(GPS_update);
@@ -94,7 +110,7 @@ void serialCom() {
       serialize16(debug4);
       serialize8('M');
       UartSendData();
-      break; 
+      break;
     case 'O':  // arduino to OSD data - contribution from MIS
       serialize8('O');
       for(i=0;i<3;i++) serialize16(accSmooth[i]);
@@ -201,31 +217,15 @@ void SerialEnd(uint8_t port) {
   }
 }
 
-#define SERIAL_RX_BUFFER_SIZE 64
-
-#if defined(PROMINI) 
-  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][1];
-  volatile uint8_t serialHeadRX[1],serialTailRX[1];
-#endif
-#if defined(PROMICRO)
-  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][2];
-  volatile uint8_t serialHeadRX[2],serialTailRX[2];
-  uint8_t usb_use_buf = 0;
-#endif
-#if defined(MEGA)
-  uint8_t serialBufferRX[SERIAL_RX_BUFFER_SIZE][4];
-  volatile uint8_t serialHeadRX[4],serialTailRX[4];
-#endif
-
 #if defined(PROMINI) && !(defined(SPEKTRUM))
-ISR(USART_RX_vect){
+SIGNAL(USART_RX_vect){
   uint8_t d = UDR0;
   uint8_t i = (serialHeadRX[0] + 1) % SERIAL_RX_BUFFER_SIZE;
   if (i != serialTailRX[0]) {serialBufferRX[serialHeadRX[0]][0] = d; serialHeadRX[0] = i;}
 }
 #endif
 #if defined(MEGA)
-ISR(USART0_RX_vect){
+SIGNAL(USART0_RX_vect){
   uint8_t d = UDR0;
   uint8_t i = (serialHeadRX[0] + 1) % SERIAL_RX_BUFFER_SIZE;
   if (i != serialTailRX[0]) {serialBufferRX[serialHeadRX[0]][0] = d; serialHeadRX[0] = i;}
@@ -233,7 +233,7 @@ ISR(USART0_RX_vect){
 #endif
 #if defined(MEGA) || defined(PROMICRO)
   #if !(defined(SPEKTRUM))
-  ISR(USART1_RX_vect){
+  SIGNAL(USART1_RX_vect){
     uint8_t d = UDR1;
     uint8_t i = (serialHeadRX[1] + 1) % SERIAL_RX_BUFFER_SIZE;
     if (i != serialTailRX[1]) {serialBufferRX[serialHeadRX[1]][1] = d; serialHeadRX[1] = i;}
@@ -241,12 +241,12 @@ ISR(USART0_RX_vect){
   #endif
 #endif
 #if defined(MEGA)
-ISR(USART2_RX_vect){
+SIGNAL(USART2_RX_vect){
   uint8_t d = UDR2;
   uint8_t i = (serialHeadRX[2] + 1) % SERIAL_RX_BUFFER_SIZE;
   if (i != serialTailRX[2]) {serialBufferRX[serialHeadRX[2]][2] = d; serialHeadRX[2] = i;}
 }
-ISR(USART3_RX_vect){
+SIGNAL(USART3_RX_vect){
   uint8_t d = UDR3;
   uint8_t i = (serialHeadRX[3] + 1) % SERIAL_RX_BUFFER_SIZE;
   if (i != serialTailRX[3]) {serialBufferRX[serialHeadRX[3]][3] = d; serialHeadRX[3] = i;}

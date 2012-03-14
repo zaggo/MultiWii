@@ -1,7 +1,7 @@
 /*
 MultiWiiCopter by Alexandre Dubus
 www.multiwii.com
-December  2011     V1.dev
+March  2012     V2.0_pre_version_1
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
@@ -10,8 +10,17 @@ December  2011     V1.dev
 
 #include "config.h"
 #include "def.h"
-#define   VERSION  19
+#include <avr/pgmspace.h>
+#define  VERSION  201
 
+/**************************************************************************************************************
+  Servosettings Only For Airplane */
+
+ uint16_t      servoMid[8] = {1500,1500,1500,1500,1500,1500,1500,1500}; // Midpoint on servo
+ uint16_t   servotravel[8] = {100, 100, 100, 100, 100, 100, 100, 100};  // Rates in 0-100% 
+ int8_t    servoreverse[8] = { 1,   1,   1,   -1,  1,   1,   1,   1};   // Invert servos by setting -1  
+
+/**************************************************************************************************************/
 
 /*********** RC alias *****************/
 #define ROLL       0
@@ -25,21 +34,24 @@ December  2011     V1.dev
 
 #define PIDALT     3
 #define PIDVEL     4
-#define PIDLEVEL   5
-#define PIDMAG     6
+#define PIDGPS     5
+#define PIDLEVEL   6
+#define PIDMAG     7
 
-#define BOXACC      0
-#define BOXBARO     1
-#define BOXMAG      2
-#define BOXCAMSTAB  3
-#define BOXCAMTRIG  4
-#define BOXARM      5
-#define BOXGPSHOME  6
-#define BOXGPSHOLD  7
-#define BOXPASSTHRU    8
-#define BOXHEADFREE 9
-#define BOXALARMON  10
+#define BOXACC       0
+#define BOXBARO      1
+#define BOXMAG       2
+#define BOXCAMSTAB   3
+#define BOXCAMTRIG   4
+#define BOXARM       5
+#define BOXGPSHOME   6
+#define BOXGPSHOLD   7
+#define BOXPASSTHRU  8
+#define BOXHEADFREE  9
+#define BOXBEEPERON  10
+
 #define CHECKBOXITEMS 11
+#define PIDITEMS 8
 
 static uint32_t currentTime = 0;
 static uint16_t previousTime = 0;
@@ -59,26 +71,38 @@ static uint8_t  GPSModeHold = 0;    // if GPS PH is activated
 static uint8_t  headFreeMode = 0;   // if head free mode is a activated
 static uint8_t  passThruMode = 0;   // if passthrough mode is activated
 static int16_t  headFreeModeHold;
-static int16_t  gyroADC[3],accADC[3],magADC[3];
-static int16_t  accSmooth[3];       // projection of smoothed and normalized gravitation force vector on x/y/z axis, as measured by accelerometer
+static int16_t  gyroADC[3],accADC[3],accSmooth[3],magADC[3];
 static int16_t  accTrim[2] = {0, 0};
 static int16_t  heading,magHold;
 static uint8_t  calibratedACC = 0;
 static uint8_t  vbat;               // battery voltage in 0.1V steps
 static uint8_t  okToArm = 0;
-static uint8_t  rcOptions1,rcOptions2;
-static int32_t  pressure;
+static uint8_t  rcOptions[CHECKBOXITEMS];
 static int32_t  BaroAlt;
-static int32_t  EstVelocity;
 static int32_t  EstAlt;             // in cm
+static int16_t  BaroPID = 0;
+static int32_t  AltHold;
+static int16_t  errorAltitudeI = 0;
 static uint8_t  buzzerState = 0;
+static uint8_t  toggleBeep = 0;
+static int16_t  debug1,debug2,debug3,debug4;
   
 //for log
 static uint16_t cycleTimeMax = 0;       // highest ever cycle timen
 static uint16_t cycleTimeMin = 65535;   // lowest ever cycle timen
 static uint16_t powerMax = 0;           // highest ever current
-static uint16_t powerAvg = 0;           // last known current
+
 static int16_t  i2c_errors_count = 0;
+static int16_t  annex650_overrun_count = 0;
+
+// **********************
+//Automatic ACC Offset Calibration
+// **********************
+static uint16_t InflightcalibratingA = 0;
+static int16_t AccInflightCalibrationArmed;
+static uint16_t AccInflightCalibrationMeasurementDone = 0;
+static uint16_t AccInflightCalibrationSavetoEEProm = 0;
+static uint16_t AccInflightCalibrationActive = 0;
 
 // **********************
 // power meter
@@ -87,7 +111,9 @@ static int16_t  i2c_errors_count = 0;
 static uint32_t pMeter[PMOTOR_SUM + 1];  //we use [0:7] for eight motors,one extra for sum
 static uint8_t pMeterV;                  // dummy to satisfy the paramStruct logic in ConfigurationLoop()
 static uint32_t pAlarm;                  // we scale the eeprom value from [0:255] to this value we can directly compare to the sum in pMeter[6]
-static uint8_t powerTrigger1 = 0;       // trigger for alarm based on power consumption
+static uint8_t powerTrigger1 = 0;        // trigger for alarm based on power consumption
+static uint16_t powerValue = 0;          // last known current
+static uint16_t intPowerMeterSum, intPowerTrigger1;
 
 // **********************
 // telemetry
@@ -110,6 +136,7 @@ static uint8_t rcExpo8;
 static int16_t lookupRX[7]; //  lookup table for expo & RC rate
 volatile uint8_t rcFrameComplete; //for serial rc receiver Spektrum
 
+
 // **************
 // gyro+acc IMU
 // **************
@@ -125,21 +152,38 @@ static int8_t  smallAngle25 = 1;
 // *************************
 static int16_t axisPID[3];
 static int16_t motor[8];
-static int16_t servo[4] = {1500,1500,1500,1500};
+static int16_t servo[8] = {1500,1500,1500,1500,1500,1500,1500,1500};
 static uint16_t wing_left_mid  = WING_LEFT_MID; 
 static uint16_t wing_right_mid = WING_RIGHT_MID; 
-static uint16_t tail_servo_mid = TRI_YAW_MIDDLE; 
+static uint16_t tri_yaw_middle = TRI_YAW_MIDDLE; 
 
 // **********************
 // EEPROM & LCD functions
 // **********************
-static uint8_t P8[7], I8[7], D8[7]; //8 bits is much faster and the code is much shorter
+static uint8_t P8[8], I8[8], D8[8]; //8 bits is much faster and the code is much shorter
 static uint8_t dynP8[3], dynI8[3], dynD8[3];
 static uint8_t rollPitchRate;
 static uint8_t yawRate;
 static uint8_t dynThrPID;
 static uint8_t activate1[CHECKBOXITEMS];
 static uint8_t activate2[CHECKBOXITEMS];
+
+// **********************
+// GPS
+// **********************
+static int32_t  GPS_latitude,GPS_longitude;
+static int32_t  GPS_latitude_home,GPS_longitude_home;
+static int32_t  GPS_latitude_hold,GPS_longitude_hold;
+static uint8_t  GPS_fix , GPS_fix_home = 0;
+static uint8_t  GPS_numSat;
+static uint16_t GPS_distanceToHome,GPS_distanceToHold;       // distance to home or hold point in meters
+static int16_t  GPS_directionToHome,GPS_directionToHold;     // direction to home or hol point in degrees
+static uint8_t  GPS_update = 0;          // it's a binary toogle to distinct a GPS position update
+static int16_t  GPS_angle[2];            // it's the angles that must be applied for GPS correction
+
+uint16_t GPS_ground_speed = 0;     // m/sec*100
+uint16_t GPS_ground_course = 0;    //degrees *10
+uint16_t GPS_altitude = 0;         //altitude in dm
 
 void blinkLED(uint8_t num, uint8_t wait,uint8_t repeat) {
   uint8_t i,r;
@@ -154,22 +198,23 @@ void blinkLED(uint8_t num, uint8_t wait,uint8_t repeat) {
   }
 }
 
-// **********************
-// GPS
-// **********************
-static int32_t  GPS_latitude,GPS_longitude;
-static int32_t  GPS_latitude_home,GPS_longitude_home;
-static uint8_t  GPS_fix , GPS_fix_home = 0;
-static uint8_t  GPS_numSat;
-static uint16_t GPS_distanceToHome;
-static int16_t  GPS_directionToHome = 0;
-static uint8_t  GPS_update = 0;
-
 void annexCode() { //this code is excetuted at each loop and won't interfere with control loop if it lasts less than 650 microseconds
-  static uint32_t buzzerTime,calibratedAccTime,telemetryTime,telemetryAutoTime,psensorTime;
+  static uint32_t buzzerTime,calibratedAccTime;
+  #if defined(LCD_TELEMETRY)
+   static uint16_t telemetryTimer = 0, telemetryAutoTimer = 0, psensorTimer = 0;
+  #endif
+  #if defined(LCD_TELEMETRY_AUTO)
+   static uint8_t telemetryAutoIndex = 0;
+   static char telemetryAutoSequence []  = LCD_TELEMETRY_AUTO;
+  #endif
+  #ifdef VBAT
+    static uint8_t vbatTimer = 0;
+  #endif
   static uint8_t  buzzerFreq;         //delay between buzzer ring
   uint8_t axis,prop1,prop2;
-  uint16_t pMeterRaw, powerValue;     //used for current reading
+  #if defined(POWERMETER_HARD)
+    uint16_t pMeterRaw;     //used for current reading
+  #endif
 
   //PITCH & ROLL only dynamic PID adjustemnt,  depending on throttle value
   if      (rcData[THROTTLE]<1500) prop2 = 100;
@@ -206,38 +251,38 @@ void annexCode() { //this code is excetuted at each loop and won't interfere wit
     rcCommand[PITCH] = rcCommand_PITCH;
   }
 
-  #if (POWERMETER == 2)
-  if (micros() > psensorTime + 19977 /*20000*/) { // 50Hz, but avoid bulking of timed tasks
+  #if defined(POWERMETER_HARD)
+    if (! (++psensorTimer % PSENSORFREQ)) {
      pMeterRaw =  analogRead(PSENSORPIN);
      powerValue = ( PSENSORNULL > pMeterRaw ? PSENSORNULL - pMeterRaw : pMeterRaw - PSENSORNULL); // do not use abs(), it would induce implicit cast to uint and overrun
+     if ( powerValue < 333) {  // only accept reasonable values. 333 is empirical
      #ifdef LOG_VALUES
-       if ( powerValue < 333) {  // only accept reasonable values. 333 is empirical
-         if (powerValue > powerMax) powerMax = powerValue;
-         powerAvg = powerValue;
-       }
+        if (powerValue > powerMax) powerMax = powerValue;
      #endif
+     } else {
+        powerValue = 333;
+     }        
      pMeter[PMOTOR_SUM] += (uint32_t) powerValue;
-     psensorTime = micros();
   }
   #endif
 
   #if defined(VBAT)
-    static uint8_t ind;
+    static uint8_t ind = 0;
     uint16_t vbatRaw = 0;
     static uint16_t vbatRawArray[8];
-    vbatRawArray[(ind++)%8] = analogRead(V_BATPIN);
-    for (uint8_t i=0;i<8;i++) vbatRaw += vbatRawArray[i];
-    vbat = vbatRaw / (VBATSCALE/2);                  // result is Vbatt in 0.1V steps
-
-    if ( (rcOptions1 & activate1[BOXALARMON]) || (rcOptions2 & activate2[BOXALARMON]) ){ // unconditional buzzer on via AUXn switch 
-       buzzerFreq = 7;
-    } else  if ( ( (vbat>VBATLEVEL1_3S) 
+    if (! (++vbatTimer % VBATFREQ)) {
+    	ADCSRA |= _BV(ADPS2) ; ADCSRA &= ~_BV(ADPS1); ADCSRA &= ~_BV(ADPS0); //this speeds up analogRead without loosing too much resolution: http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1208715493/11
+    	vbatRawArray[(ind++)%8] = analogRead(V_BATPIN);
+    	for (uint8_t i=0;i<8;i++) vbatRaw += vbatRawArray[i];
+    	vbat = vbatRaw / (VBATSCALE/2);                  // result is Vbatt in 0.1V steps
+    }
+    if ( ( (vbat>VBATLEVEL1_3S) 
     #if defined(POWERMETER)
                          && ( (pMeter[PMOTOR_SUM] < pAlarm) || (pAlarm == 0) )
     #endif
                        )  || (NO_VBAT>vbat)                              ) // ToLuSe
     {                                          //VBAT ok AND powermeter ok, buzzer off
-      buzzerFreq = 0; buzzerState = 0; BUZZERPIN_OFF;
+      buzzerFreq = 0; buzzerState = 0;
     #if defined(POWERMETER)
     } else if (pMeter[PMOTOR_SUM] > pAlarm) {                             // sound alarm for powermeter
       buzzerFreq = 4;
@@ -245,19 +290,9 @@ void annexCode() { //this code is excetuted at each loop and won't interfere wit
     } else if (vbat>VBATLEVEL2_3S) buzzerFreq = 1;
     else if (vbat>VBATLEVEL3_3S)   buzzerFreq = 2;
     else                           buzzerFreq = 4;
-    if (buzzerFreq) {
-      if (buzzerState && (currentTime > buzzerTime + 250000) ) {
-        buzzerState = 0;
-        BUZZERPIN_OFF;
-        buzzerTime = currentTime;
-      } else if ( !buzzerState && (currentTime > (buzzerTime + (2000000>>buzzerFreq))) ) {
-        buzzerState = 1;
-        BUZZERPIN_ON;
-        buzzerTime = currentTime;
-      }
-    }
   #endif
-
+  buzzer(buzzerFreq);//external buzzer routine that handles buzzer events globally now
+  
   if ( (calibratingA>0 && (ACC || nunchuk) ) || (calibratingG>0) ) {  // Calibration phasis
     LEDPIN_TOGGLE;
   } else {
@@ -284,24 +319,38 @@ void annexCode() { //this code is excetuted at each loop and won't interfere wit
 
   serialCom();
 
+  #if defined(POWERMETER)
+    intPowerMeterSum = (pMeter[PMOTOR_SUM]/PLEVELDIV);
+    intPowerTrigger1 = powerTrigger1 * PLEVELSCALE; 
+  #endif
+
   #ifdef LCD_TELEMETRY_AUTO
-    if ( (telemetry_auto) && (micros() > telemetryAutoTime + LCD_TELEMETRY_AUTO) ) { // every 2 seconds
-      telemetry++;
-      if ( (telemetry < 1 ) || (telemetry > 5 ) ) telemetry = 1;
-      telemetryAutoTime = micros(); // why use micros() and not the variable currentTime ?
+    if ( (telemetry_auto) && (! (++telemetryAutoTimer % LCD_TELEMETRY_AUTO_FREQ) )  ){
+      telemetry = telemetryAutoSequence[++telemetryAutoIndex % strlen(telemetryAutoSequence)];
+      LCDclear(); // make sure to clear away remnants
     }
   #endif  
   #ifdef LCD_TELEMETRY
-    if (micros() > telemetryTime +  LCD_TELEMETRY) { // 10Hz
+    if (! (++telemetryTimer % LCD_TELEMETRY_FREQ)) {
+      #if (LCD_TELEMETRY_DEBUG+0 > 0)
+        telemetry = LCD_TELEMETRY_DEBUG;
+      #endif
       if (telemetry) lcd_telemetry();
-      telemetryTime = micros();  
+    }
+  #endif
+  
+  #if GPS
+    static uint32_t GPSLEDTime;
+    if ( currentTime > GPSLEDTime && (GPS_fix_home == 1)) {
+      GPSLEDTime = currentTime + 150000;
+      LEDPIN_TOGGLE;
     }
   #endif
 }
 
 
 void setup() {
-  SerialOpen(0,115200);
+  SerialOpen(0,SERIAL_COM_SPEED);
   LEDPIN_PINMODE;
   POWERPIN_PINMODE;
   BUZZERPIN_PINMODE;
@@ -321,13 +370,19 @@ void setup() {
     for(uint8_t i=0;i<=PMOTOR_SUM;i++)
       pMeter[i]=0;
   #endif
-  #if defined(GPS)
+  #if defined(GPS_SERIAL)
     SerialOpen(GPS_SERIAL,GPS_BAUD);
   #endif
   #if defined(LCD_ETPP)
-    i2c_ETPP_init();
-    i2c_ETPP_set_cursor(0,0);LCDprintChar("MultiWii");
-    i2c_ETPP_set_cursor(0,1);LCDprintChar("Ready to Fly!");
+    initLCD();
+  #elif defined(LCD_LCD03)
+    initLCD();
+  #endif
+  #ifdef LCD_TELEMETRY_DEBUG
+    telemetry_auto = 1;
+  #endif
+  #ifdef LCD_CONF_DEBUG
+    configurationLoop();
   #endif
 }
 
@@ -342,21 +397,16 @@ void loop () {
   static int16_t delta1[3],delta2[3];
   static int16_t errorGyroI[3] = {0,0,0};
   static int16_t errorAngleI[2] = {0,0};
-
   static uint32_t rcTime  = 0;
   static int16_t initialThrottleHold;
-  static int16_t errorAltitudeI = 0;
-  int16_t AltPID = 0;
-  static int16_t lastVelError = 0;
-  static int32_t AltHold;
- 
+
   #if defined(SPEKTRUM)
     if (rcFrameComplete) computeRC();
   #endif
-  
+
   if (currentTime > rcTime ) { // 50Hz
     rcTime = currentTime + 20000;
-    #if !(defined(SPEKTRUM) || defined(BTSERIAL))
+    #if !(defined(SPEKTRUM) ||defined(BTSERIAL))
       computeRC();
     #endif
     // Failsafe routine - added by MIS
@@ -381,15 +431,40 @@ void loop () {
         if (rcDelayCommand == 20) calibratingG=400;
       } else if (rcData[YAW] > MAXCHECK && rcData[PITCH] > MAXCHECK && armed == 0) {
         if (rcDelayCommand == 20) {
-          servo[0] = 1500; //we center the yaw gyro in conf mode
+          #ifdef TRI
+          servo[5] = 1500; //we center the yaw servo in conf mode
           writeServos();
+          #endif
+          #ifdef FLYING_WING
+          servo[0]  = wing_left_mid;
+          servo[1]  = wing_right_mid;
+          writeServos();
+          #endif
           #if defined(LCD_CONF)
             configurationLoop(); //beginning LCD configuration
           #endif
           previousTime = micros();
         }
-      } else if ((activate1[BOXARM] > 0) || (activate2[BOXARM] > 0)) {
-        if ( ((rcOptions1 & activate1[BOXARM]) || (rcOptions2 & activate2[BOXARM])) && okToArm ) {
+      }
+      #if defined(InflightAccCalibration)  
+        else if (armed == 0 && rcData[YAW] < MINCHECK && rcData[PITCH] > MAXCHECK && rcData[ROLL] > MAXCHECK){
+          if (rcDelayCommand == 20){
+            if (AccInflightCalibrationMeasurementDone){                //trigger saving into eeprom after landing
+              AccInflightCalibrationMeasurementDone = 0;
+              AccInflightCalibrationSavetoEEProm = 1;
+            }else{ 
+              AccInflightCalibrationArmed = !AccInflightCalibrationArmed; 
+              if (AccInflightCalibrationArmed){
+                toggleBeep = 2;
+              }else{
+                toggleBeep = 3;
+              } 
+            }
+          }
+       } 
+     #endif
+      else if ((activate1[BOXARM] > 0) || (activate2[BOXARM] > 0)) {
+        if ( rcOptions[BOXARM] && okToArm ) {
           armed = 1;
           headFreeModeHold = heading;
         } else if (armed) armed = 0;
@@ -445,19 +520,36 @@ void loop () {
       }
     }
    #ifdef LOG_VALUES
-    if (armed) { // update min and max values here, so do not get cycle time of the motor arming (which is way higher than normal)
-      if (cycleTime > cycleTimeMax) cycleTimeMax = cycleTime; // remember highscore
-      if (cycleTime < cycleTimeMin) cycleTimeMin = cycleTime; // remember lowscore
-    }
+    if (cycleTime > cycleTimeMax) cycleTimeMax = cycleTime; // remember highscore
+    if (cycleTime < cycleTimeMin) cycleTimeMin = cycleTime; // remember lowscore
    #endif
 
-    rcOptions1 = (rcData[AUX1]<1300)   + (1300<rcData[AUX1] && rcData[AUX1]<1700)*2  + (rcData[AUX1]>1700)*4
-               +(rcData[AUX2]<1300)*8 + (1300<rcData[AUX2] && rcData[AUX2]<1700)*16 + (rcData[AUX2]>1700)*32;
-    rcOptions2 = (rcData[AUX3]<1300)   + (1300<rcData[AUX3] && rcData[AUX3]<1700)*2  + (rcData[AUX3]>1700)*4
-               +(rcData[AUX4]<1300)*8 + (1300<rcData[AUX4] && rcData[AUX4]<1700)*16 + (rcData[AUX4]>1700)*32;
+    #if defined(InflightAccCalibration)  
+      if (AccInflightCalibrationArmed && armed == 1 && rcData[THROTTLE] > MINCHECK && !rcOptions[BOXARM] ){              // Copter is airborne and you are turning it off via boxarm : start measurement
+        InflightcalibratingA = 50;
+        AccInflightCalibrationArmed = 0;  
+      }  
+      if (rcOptions[BOXPASSTHRU]) {      //Use the Passthru Option to activate : Passthru = TRUE Meausrement started, Land and passtrhu = 0 measurement stored
+        if (!AccInflightCalibrationActive && !AccInflightCalibrationMeasurementDone){
+          InflightcalibratingA = 50;
+        }
+      }else if(AccInflightCalibrationMeasurementDone && armed == 0){
+        AccInflightCalibrationMeasurementDone = 0;
+        AccInflightCalibrationSavetoEEProm = 1;
+      }
+    #endif
+
+    for(i=0;i<CHECKBOXITEMS;i++) {
+      rcOptions[i] = (
+      ( (rcData[AUX1]<1300)    | (1300<rcData[AUX1] && rcData[AUX1]<1700)<<1 | (rcData[AUX1]>1700)<<2
+       |(rcData[AUX2]<1300)<<3 | (1300<rcData[AUX2] && rcData[AUX2]<1700)<<4 | (rcData[AUX2]>1700)<<5) & activate1[i]
+      )||(
+      ( (rcData[AUX3]<1300)    | (1300<rcData[AUX3] && rcData[AUX3]<1700)<<1 | (rcData[AUX3]>1700)<<2
+       |(rcData[AUX4]<1300)<<3 | (1300<rcData[AUX4] && rcData[AUX4]<1700)<<4 | (rcData[AUX4]>1700)<<5) & activate2[i]);
+    }
     
     //note: if FAILSAFE is disable, failsafeCnt > 5*FAILSAVE_DELAY is always false
-    if (( (rcOptions1 & activate1[BOXACC]) || (rcOptions2 & activate2[BOXACC]) || (failsafeCnt > 5*FAILSAVE_DELAY) ) && (ACC || nunchuk)) { 
+    if (( rcOptions[BOXACC] || (failsafeCnt > 5*FAILSAVE_DELAY) ) && (ACC || nunchuk)) { 
       // bumpless transfer to Level mode
       if (!accMode) {
         errorAngleI[ROLL] = 0; errorAngleI[PITCH] = 0;
@@ -465,99 +557,138 @@ void loop () {
       }  
     } else accMode = 0;  // modified by MIS for failsave support
 
-    if ((rcOptions1 & activate1[BOXARM]) == 0 || (rcOptions2 & activate2[BOXARM]) == 0) okToArm = 1;
-    if (accMode == 1) STABLEPIN_ON else STABLEPIN_OFF;
+    if (rcOptions[BOXARM] == 0) okToArm = 1;
+    if (accMode == 1) {STABLEPIN_ON;} else {STABLEPIN_OFF;}
 
-    if(BARO) {
-      if ((rcOptions1 & activate1[BOXBARO]) || (rcOptions2 & activate2[BOXBARO])) {
+    #if BARO
+      if (rcOptions[BOXBARO]) {
         if (baroMode == 0) {
           baroMode = 1;
           AltHold = EstAlt;
           initialThrottleHold = rcCommand[THROTTLE];
           errorAltitudeI = 0;
-          lastVelError = 0;
-          EstVelocity = 0;
+          BaroPID=0;
         }
       } else baroMode = 0;
-    }
-    if(MAG) {
-      if ((rcOptions1 & activate1[BOXMAG]) || (rcOptions2 & activate2[BOXMAG])) {
+    #endif
+    #if MAG
+      if (rcOptions[BOXMAG]) {
         if (magMode == 0) {
           magMode = 1;
           magHold = heading;
         }
       } else magMode = 0;
-      if ((rcOptions1 & activate1[BOXHEADFREE]) || (rcOptions2 & activate2[BOXHEADFREE])) {
+      if (rcOptions[BOXHEADFREE]) {
         if (headFreeMode == 0) {
           headFreeMode = 1;
         }
       } else headFreeMode = 0;
-    }
-    #if defined(GPS)
-      if ((rcOptions1 & activate1[BOXGPSHOME]) || (rcOptions2 & activate2[BOXGPSHOME])) {GPSModeHome = 1;}
-      else GPSModeHome = 0;
-      if ((rcOptions1 & activate1[BOXGPSHOLD]) || (rcOptions2 & activate2[BOXGPSHOLD])) {GPSModeHold = 1;}
-      else GPSModeHold = 0;
     #endif
-    if ((rcOptions1 & activate1[BOXPASSTHRU]) || (rcOptions2 & activate2[BOXPASSTHRU])) {passThruMode = 1;}
+    #if GPS
+      if (rcOptions[BOXGPSHOME]) {GPSModeHome = 1;}
+      else GPSModeHome = 0;
+      if (rcOptions[BOXGPSHOLD]) {
+        if (GPSModeHold == 0) {
+          GPSModeHold = 1;
+          GPS_latitude_hold = GPS_latitude;
+          GPS_longitude_hold = GPS_longitude;
+        }
+      } else {
+        GPSModeHold = 0;
+      }
+    #endif
+    if (rcOptions[BOXPASSTHRU]) {passThruMode = 1;}
     else passThruMode = 0;
+  } else { //not in rc loop
+    static int8_t taskOrder=0; //never call all functions in the same loop, to avoid high delay spikes
+    switch (taskOrder) {
+      case 0:
+        taskOrder++;    
+        #if MAG
+          Mag_getADC();
+          break;
+        #endif
+      case 1:
+        taskOrder++; 
+        #if BARO
+          Baro_update();     
+          break;
+        #endif
+      case 2:
+        taskOrder++; 
+        #if BARO
+          getEstimatedAltitude();
+          break;
+        #endif
+      case 3:
+        taskOrder++; 
+        #if GPS
+          GPS_NewData();
+          break;
+        #endif
+      default:
+        taskOrder=0;
+        break;
+    }
   }
-  if (MAG)  Mag_getADC();
-  if (BARO) Baro_update();
-    
+
   computeIMU();
   // Measure loop rate just afer reading the sensors
   currentTime = micros();
   cycleTime = currentTime - previousTime;
   previousTime = currentTime;
 
-  if(MAG) {
+  #if MAG
     if (abs(rcCommand[YAW]) <70 && magMode) {
       int16_t dif = heading - magHold;
       if (dif <= - 180) dif += 360;
       if (dif >= + 180) dif -= 360;
       if ( smallAngle25 ) rcCommand[YAW] -= dif*P8[PIDMAG]/30;  //18 deg
     } else magHold = heading;
-  }
+  #endif
 
-  if(BARO) {
+  #if BARO
     if (baroMode) {
       if (abs(rcCommand[THROTTLE]-initialThrottleHold)>20) {
-        baroMode = 0;
-        errorAltitudeI = 0;
+         baroMode = 0; // so that a new althold reference is defined
       }
-      //**** Alt. Set Point stabilization PID ****
-      error = constrain( AltHold - EstAlt, -1000, 1000); //  +/-10m,  1 decimeter accuracy
-      errorAltitudeI += error;
-      errorAltitudeI = constrain(errorAltitudeI,-30000,30000);
-      
-      PTerm = P8[PIDALT]*error/100;                     // 16 bits is ok here
-      ITerm = (int32_t)I8[PIDALT]*errorAltitudeI/40000;
-      
-      AltPID = PTerm + ITerm ;
-
-      //**** Velocity stabilization PD ****        
-      error = constrain(EstVelocity*2, -30000, 30000);
-      delta = error - lastVelError;
-      lastVelError = error;
-
-      PTerm = (int32_t)error * P8[PIDVEL]/800;
-      DTerm = (int32_t)delta * D8[PIDVEL]/16;
-      
-      rcCommand[THROTTLE] = initialThrottleHold + constrain(AltPID - (PTerm - DTerm),-100,+100);
+      rcCommand[THROTTLE] = initialThrottleHold + BaroPID;
     }
-  }
+  #endif
+  
+  #if GPS
+    uint16_t GPS_dist;
+    int16_t  GPS_dir;
+
+    if ( (GPSModeHome == 0 && GPSModeHold == 0) || (GPS_fix_home == 0) ) {
+      GPS_angle[ROLL]  = 0;
+      GPS_angle[PITCH] = 0;
+    } else {
+      if (GPSModeHome == 1) {
+        GPS_dist = GPS_distanceToHome;
+        GPS_dir = GPS_directionToHome;
+      }
+      if (GPSModeHold == 1) {
+        GPS_dist = GPS_distanceToHold;
+        GPS_dir = GPS_directionToHold;
+      }
+      float radDiff = (GPS_dir-heading) * 0.0174533f;
+      GPS_angle[ROLL]  = constrain(P8[PIDGPS] * sin(radDiff) * GPS_dist / 10,-D8[PIDGPS]*10,+D8[PIDGPS]*10); // with P=5.0, a distance of 1 meter = 0.5deg inclination
+      GPS_angle[PITCH] = constrain(P8[PIDGPS] * cos(radDiff) * GPS_dist / 10,-D8[PIDGPS]*10,+D8[PIDGPS]*10); // max inclination = D deg
+    }
+  #endif
 
   //**** PITCH & ROLL & YAW PID ****    
   for(axis=0;axis<3;axis++) {
     if (accMode == 1 && axis<2 ) { //LEVEL MODE
       // 50 degrees max inclination
-      errorAngle = constrain(2*rcCommand[axis],-500,+500) - angle[axis] + accTrim[axis]; //16 bits is ok here
+      errorAngle = constrain(2*rcCommand[axis] - GPS_angle[axis],-500,+500) - angle[axis] + accTrim[axis]; //16 bits is ok here
       #ifdef LEVEL_PDF
         PTerm      = -(int32_t)angle[axis]*P8[PIDLEVEL]/100 ;
       #else  
         PTerm      = (int32_t)errorAngle*P8[PIDLEVEL]/100 ;                          //32 bits is needed for calculation: errorAngle*P8[PIDLEVEL] could exceed 32768   16 bits is ok for result
       #endif
+      PTerm = constrain(PTerm,-D8[PIDLEVEL]*5,+D8[PIDLEVEL]*5);
 
       errorAngleI[axis]  = constrain(errorAngleI[axis]+errorAngle,-10000,+10000);    //WindUp     //16 bits is ok here
       ITerm              = ((int32_t)errorAngleI[axis]*I8[PIDLEVEL])>>12;            //32 bits is needed for calculation:10000*I8 could exceed 32768   16 bits is ok for result
@@ -590,21 +721,4 @@ void loop () {
   mixTable();
   writeServos();
   writeMotors();
-
-  //GPS
-  #if defined(GPS)
-    while (SerialAvailable(2)) {
-     if (GPS_newFrame(SerialRead(2))) {
-        if (GPS_update == 1) GPS_update = 0; else GPS_update = 1;
-        if (GPS_fix == 1) {
-          if (GPS_fix_home == 0) {
-            GPS_fix_home = 1;
-            GPS_latitude_home = GPS_latitude;
-            GPS_longitude_home = GPS_longitude;
-          }
-          GPS_distance(GPS_latitude_home,GPS_longitude_home,GPS_latitude,GPS_longitude, &GPS_distanceToHome, &GPS_directionToHome);
-        }
-      }
-    }
-  #endif
 }
